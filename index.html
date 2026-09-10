@@ -1006,11 +1006,16 @@ function go(p,anchor){
 var RENDER={};
 function render(){
   curClass();
+  /* 保存滚动位置，渲染后恢复，避免点「未交」等操作后页面跳到顶部 */
+  var view=$('#view'), sx=0, sy=0;
+  if(view){sx=view.scrollLeft;sy=view.scrollTop}
   renderNav();syncTop();
   var p=PAGES.filter(function(x){return x.k===UI.page})[0]||PAGES[0];
   $('#pgTitle').textContent=p.t;
   var f=RENDER[UI.page];
-  $('#view').innerHTML='<div class="wrap">'+(f?f():'<div class="empty">此页尚未实现</div>')+'</div>';
+  view=$('#view');
+  if(view){view.innerHTML='<div class="wrap">'+(f?f():'<div class="empty">此页尚未实现</div>')+'</div>';view.scrollLeft=sx;view.scrollTop=sy}
+  else{$('#view').innerHTML='<div class="wrap">'+(f?f():'<div class="empty">此页尚未实现</div>')+'</div>'}
   if(RENDER[UI.page+'_after'])RENDER[UI.page+'_after']();
 }
 function tabBar(page,items){
