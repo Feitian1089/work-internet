@@ -2821,10 +2821,11 @@ function printHWList(){
   printHTML(c.name+' 作业台账',tableHTML(['布置日','名称','内容','上交日','时长','已交','未交'],rows));
 }
 
-/* ---------- 收交矩阵（优化版：横向滚动+紧凑列） ---------- */
+/* ---------- 收交矩阵（优化版：横向滚动+紧凑列+状态筛选） ---------- */
 function hwGrid(){
   var c=curClass(),all=hwOf(c.id),list=all.slice(0,10),ss=studs(c);
   if(!list.length)return '<div class="card"><div class="empty">还没布置作业</div></div>';
+  var fSt=UI.sel.hwGridSt||''; /* ''=全部 n=未交 s=已交 g=已批 */
   var head='<tr><th class="stick1" style="width:78px">姓名</th>'+list.map(function(a,i){
     var o=hwCount(a);
     return '<th class="gridcell hw-th" title="'+h(a.title)+'">'+
@@ -2832,7 +2833,14 @@ function hwGrid(){
       '<div class="hw-th-meta">'+fmtD(a.due)+' · 未交'+o.n+'</div>'+
       '<button class="btn sm" style="padding:1px 5px;font-size:10px;margin-top:2px" onclick="hwSetAll(\''+a.id+'\',\'s\')">全交</button></th>'}).join('')+
     '<th class="num" style="width:48px">未交</th></tr>';
-  var body=ss.map(function(s){
+  /* 按筛选条件过滤学生：只显示在任意一列作业中符合所选状态的学生 */
+  var filtSS=ss;
+  if(fSt){
+    filtSS=ss.filter(function(s){
+      return list.some(function(a){return hwStat(a,s.id).s===fSt});
+    });
+  }
+  var body=filtSS.map(function(s){
     var n=0;
     var tds=list.map(function(a){
       var st=hwStat(a,s.id);if(st.s==='n')n++;
@@ -2843,11 +2851,24 @@ function hwGrid(){
     return '<tr><td class="stick1"><b class="linkish" onclick="openStu(\''+s.id+'\')">'+(s.no?'<span class="mini" style="margin-right:4px">'+s.no+'</span>':'')+h(sname(s))+'</b></td>'+tds+
       '<td class="num"'+(n?' style="color:var(--red);font-weight:700"':'')+'>'+(n||'')+'</td></tr>';
   }).join('');
+  /* 筛选按钮行：全部 / 未交(红) / 已交(橙) / 已批(绿)，括号内为人数 */
+  var nCnt=ss.filter(function(s){return list.some(function(a){return hwStat(a,s.id).s==='n'})}).length;
+  var sCnt=ss.filter(function(s){return list.some(function(a){return hwStat(a,s.id).s==='s'})}).length;
+  var gCnt=ss.filter(function(s){return list.some(function(a){return hwStat(a,s.id).s==='g'})}).length;
+  var fBtns='<div class="row tight" style="margin-bottom:8px;flex-wrap:wrap">'+
+    '<span class="mini" style="line-height:30px;margin-right:6px">筛选：</span>'+
+    '<button class="btn sm'+(!fSt?' on':'')+'" onclick="UI.sel.hwGridSt=\'\';render()">全部('+ss.length+')</button>'+
+    '<button class="btn sm'+(fSt==='n'?' danger':'')+'" onclick="UI.sel.hwGridSt=\'n\';render()">'+icon('x',12)+' 未交('+nCnt+')</button>'+
+    '<button class="btn sm'+(fSt==='s'?' on':'')+'" onclick="UI.sel.hwGridSt=\'s\';render()">'+icon('check',12)+' 已交('+sCnt+')</button>'+
+    '<button class="btn sm'+(fSt==='g'?' on':'')+'" onclick="UI.sel.hwGridSt=\'g\';render()">'+icon('award',12)+' 已批('+gCnt+')</button>'+
+    '</div>';
   return '<div class="card"><h3>'+icon('grid',18)+'收交登记 · '+h(c.name)+'<span class="grow"></span>'+
     '<button class="btn sm" onclick="exportHWGrid()">'+icon('down',15)+'导出 Excel(CSV)</button>'+
     '<button class="btn sm" onclick="printHWGrid()">'+icon('print',15)+'打印</button></h3>'+
     '<div class="alert blue">'+icon('hand',18)+'<div class="grow">收作业时点表头的<b>「全交」</b>先全部记成已交，再把没交的那几个点回「未交」——两三下就完事。<br>格子点一下循环：未交 → 已交 → 已批。改完自动存。</div></div>'+
+    fBtns+
     '<div class="hw-scroll-wrap"><div class="tbwrap" style="max-height:64vh"><table><thead>'+head+'</thead><tbody>'+body+'</tbody></table></div></div>'+
+    (filtSS.length!==ss.length?'<div class="mini" style="color:var(--orange);margin-top:4px">当前筛选：'+(fSt==='n'?'未交':fSt==='s'?'已交':'已批')+'，共 '+filtSS.length+' 人（全班 '+ss.length+' 人）</div>':'')+
     '<div class="row" style="margin-top:8px">'+list.map(function(a){var o=hwCount(a);
       return '<button class="btn sm'+(o.n?' danger':'')+'" onclick="copyUnsub(\''+a.id+'\')">'+icon('copy',14)+'复制「'+h(a.title.length>6?a.title.slice(0,6)+'…':a.title)+'」未交('+o.n+')</button>'}).join('')+'</div>'+
   '</div>';
@@ -3087,6 +3108,26 @@ function bands(e){
   return o;
 }
 function normScore(e,sid){var v=e.scores?e.scores[sid]:null;return (v==null||v==='')?null:nb(v)/nb(e.full,100)*100}
+/* 还没录分数的学生名单 */
+function missList(e){
+  var c=classById(e.classId);if(!c)return [];
+  return studs(c).filter(function(s){var v=e.scores?e.scores[s.id]:null;return v==null||v===''});
+}
+/* 查看未录入名单 */
+function showMiss(id){
+  var e=examById(id);if(!e)return;
+  var l=missList(e);
+  if(!l.length){toast('全部录完了，一个不漏 👏','ok');return}
+  modal({title:'还没录分数的学生 · '+e.name,
+    body:'<div class="alert orange">'+icon('bell',18)+'<div class="grow">共 <b>'+l.length+'</b> 人还没录入（共 '+studs(classById(e.classId)).length+' 人）。点名字看档案。</div></div>'+
+      '<div class="row" style="flex-wrap:wrap;gap:6px">'+l.map(function(s){
+        return '<span class="chip" style="min-height:36px" onclick="closeModal();openStu(\''+s.id+'\')">'+(s.no?s.no+' ':'')+h(sname(s))+'</span>'}).join('')+'</div>'+
+      '<div class="mini" style="margin-top:10px">复制名字可直接发群催交：</div>',
+    footer:'<button class="btn" onclick="closeModal()">关闭</button>'+
+      '<button class="btn" onclick="copyText(\'【'+h(e.name)+'】还没录入分数的学生：'+l.map(function(s){return (s.no?s.no+' ':'')+sname(s)}).join('、')+'\',\'未录入名单已复制\')">复制名单</button>'+
+      '<button class="btn pri" onclick="closeModal();UI.sel.scMissOnly=\''+e.id+'\';UI.sel.exId=\''+e.id+'\';render()">只看未录入</button>'});
+}
+function scToggleMiss(id){UI.sel.scMissOnly=(UI.sel.scMissOnly===id)?'':id;render()}
 
 RENDER.score=function(){
   if(!DB.classes.length)return '<div class="card"><div class="empty">先到「班级」建一个班</div></div>';
@@ -3110,7 +3151,7 @@ function scList(){
         return '<tr'+(cur&&cur.id===e.id?' style="background:var(--pri-bg)"':'')+'><td class="stick1"><b class="linkish" onclick="UI.sel.exId=\''+e.id+'\';render()">'+h(e.name)+'</b></td>'+
         '<td>'+fmtD(e.date)+'</td><td class="num">'+nb(e.full,100)+'</td><td class="num">'+nb(e.weight,1)+'</td>'+
         '<td class="num"><b>'+st.avg+'</b></td><td class="num"'+(st.pass<80?' style="color:var(--red)"':'')+'>'+st.pass+'%</td>'+
-        '<td class="num">'+st.good+'%</td><td class="num"'+(st.miss?' style="color:var(--orange)"':'')+'>'+(st.miss||'—')+'</td>'+
+        '<td class="num">'+st.good+'%</td><td class="num"'+(st.miss?' style="color:var(--orange)"':'')+'>'+(st.miss?'<span class="linkish" onclick="showMiss(\''+e.id+'\')" title="点一下看是谁没录">'+st.miss+'</span>':'—')+'</td>'+
         '<td><button class="btn sm pri" onclick="UI.sel.exId=\''+e.id+'\';render()">录分</button> '+
         '<button class="btn sm" onclick="editExam(\''+e.id+'\')">改</button> '+
         '<button class="btn sm danger" onclick="delExam(\''+e.id+'\')">删</button></td></tr>'}).join('')+
@@ -3147,28 +3188,36 @@ function delExam(id){
 function scEntry(e){
   var c=classById(e.classId),ss=studs(c),st=examStat(e);
   var hasPt=(e.pts||[]).length>0;
+  var miss=missList(e);
+  var only=(UI.sel.scMissOnly===e.id);
+  var showSS=only?miss:ss;
+  var missNames=miss.map(function(s){return sname(s)}).join('、');
   return '<div class="card"><h3>'+icon('edit',18)+'录分 · '+h(e.name)+'<span class="grow"></span>'+
+    '<button class="btn sm'+(miss.length?' danger':'')+'" onclick="scToggleMiss(\''+e.id+'\')">'+icon('eye',15)+(only?'显示全部':'只看未录入（'+miss.length+'）')+'</button>'+
     '<button class="btn sm pri" onclick="pasteScores(\''+e.id+'\')">'+icon('up',15)+'整列粘贴分数</button>'+
     '<button class="btn sm" onclick="exportScores(\''+e.id+'\')">'+icon('down',15)+'导出</button>'+
     '<button class="btn sm" onclick="printScores(\''+e.id+'\')">'+icon('print',15)+'打印</button></h3>'+
     '<div class="alert blue">'+icon('hand',18)+'<div class="grow">按学号顺序念分数，输完一个按 <b>回车</b> 自动跳到下一个。<b>不及格标红、优秀标绿</b>，一眼看到要盯谁。<br>从 Excel 里整列复制过来更快，点「整列粘贴分数」。</div></div>'+
+    (miss.length?'<div class="alert orange">'+icon('bell',18)+'<div class="grow"><b>还有 '+miss.length+' 人没录分数：</b>'+h(missNames)+'</div>'+
+      '<button class="btn sm" onclick="copyText(\'【'+h(e.name)+'】还没录入：'+missNames+'\',\'名单已复制\')">'+icon('copy',14)+'复制</button></div>':'')+
     '<div class="grid g4 keep2" style="margin-bottom:10px">'+
       attKpi('平均分',st.avg,'')+attKpi('及格率',st.pass+'%',st.pass<80?'var(--red)':'var(--green)')+
       attKpi('优秀率',st.good+'%','var(--green)')+attKpi('不及格人数',st.fail,st.fail?'var(--red)':'')+
     '</div>'+
+    (only?'<div class="mini" style="margin-bottom:6px;color:var(--orange)">正在只看未录入（'+showSS.length+' 人），录完点右上角「显示全部」恢复。</div>':'')+
     '<div class="tbwrap" style="max-height:60vh"><table><thead><tr><th style="width:52px">学号</th><th class="stick1" style="width:92px">姓名</th>'+
       '<th style="width:110px">总分（/'+nb(e.full,100)+'）</th>'+
       (hasPt?(e.pts||[]).map(function(p){return '<th style="width:92px">'+h(p.name)+'<br><span class="mini">/'+nb(p.full)+'</span></th>'}).join(''):'')+
       '<th class="num" style="width:64px">班名</th><th class="num" style="width:80px">较上次</th></tr></thead><tbody>'+
-      rankRows(e,ss)+
+      (showSS.length?rankRows(e,ss,showSS):'<tr><td colspan="9"><div class="empty">这个考试全班都录完了 👏</div></td></tr>')+
     '</tbody></table></div>'+
     '<div class="mini" style="margin-top:6px">输入框留空＝这次没考（缺考不算进平均分）。改完自动存。</div></div>';
 }
-function rankRows(e,ss){
+function rankRows(e,ss,showSS){
   var order=sortBy(ss.filter(function(s){return e.scores&&e.scores[s.id]!=null&&e.scores[s.id]!==''}),function(s){return nb(e.scores[s.id])},true);
   var rk={};order.forEach(function(s,i){rk[s.id]=i+1});
   var prev=prevExam(e);
-  return ss.map(function(s,i){
+  return (showSS||ss).map(function(s,i){
     var v=e.scores?e.scores[s.id]:'';
     var d=null;
     if(prev){var a=normScore(e,s.id),b=normScore(prev,s.id);if(a!=null&&b!=null)d=r1(a-b)}
